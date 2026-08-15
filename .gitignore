@@ -4,3 +4,10 @@ node_modules/
 dist/
 build/
 *.zip
+node_modules/
+.env
+.env.local
+dist/
+build/
+*.zip
+server/.pglite_data/
