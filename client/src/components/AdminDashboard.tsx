@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { User, UserRole } from '../types';
-import { apiGetUsers, apiCreateUser, apiGetAdminAudit } from '../api/domain';
-import { ShieldCheck, UserPlus, Users, Award, FileCheck, Calendar } from 'lucide-react';
+import { User, UserRole, Club, ClubStatus } from '../types';
+import { apiGetUsers, apiCreateUser, apiGetAdminAudit, apiGetClubs, apiUpdateClubStatus } from '../api/domain';
+import { ShieldCheck, UserPlus, Users, Award, FileCheck, Calendar, Building2, Check, X, Clock } from 'lucide-react';
 
 export const AdminDashboard: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
+  const [clubs, setClubs] = useState<Club[]>([]);
   const [audit, setAudit] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showUserModal, setShowUserModal] = useState(false);
@@ -19,9 +20,14 @@ export const AdminDashboard: React.FC = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [uList, auditData] = await Promise.all([apiGetUsers(), apiGetAdminAudit()]);
+      const [uList, auditData, cList] = await Promise.all([
+        apiGetUsers(),
+        apiGetAdminAudit(),
+        apiGetClubs(),
+      ]);
       setUsers(uList);
       setAudit(auditData);
+      setClubs(cList || []);
     } catch (err) {
       console.error('Failed to load admin audit data:', err);
     } finally {
@@ -32,6 +38,15 @@ export const AdminDashboard: React.FC = () => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  const handleClubStatus = async (clubId: string, status: ClubStatus) => {
+    try {
+      await apiUpdateClubStatus(clubId, status);
+      fetchData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to update club status');
+    }
+  };
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -129,6 +144,85 @@ export const AdminDashboard: React.FC = () => {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Club Applications & Management */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.5rem' }}>
+        <h3 style={{ fontSize: '1.15rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          <Building2 size={18} style={{ color: 'var(--role-club)' }} />
+          Club Applications & Approvals ({clubs.length})
+        </h3>
+      </div>
+
+      <div className="info-card" style={{ padding: 0, overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.875rem' }}>
+          <thead>
+            <tr style={{ background: 'var(--bg-input)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
+              <th style={{ padding: '0.85rem 1rem' }}>Club Name</th>
+              <th style={{ padding: '0.85rem 1rem' }}>Description</th>
+              <th style={{ padding: '0.85rem 1rem' }}>Administrator</th>
+              <th style={{ padding: '0.85rem 1rem' }}>Status</th>
+              <th style={{ padding: '0.85rem 1rem' }}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {clubs.length === 0 ? (
+              <tr>
+                <td colSpan={5} style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  No club applications registered yet.
+                </td>
+              </tr>
+            ) : (
+              clubs.map((c) => (
+                <tr key={c.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                  <td style={{ padding: '0.85rem 1rem', fontWeight: 700 }}>{c.name}</td>
+                  <td style={{ padding: '0.85rem 1rem', color: 'var(--text-muted)', fontSize: '0.8rem', maxWidth: '280px' }}>
+                    {c.description || 'No description provided'}
+                  </td>
+                  <td style={{ padding: '0.85rem 1rem' }}>
+                    <div style={{ fontWeight: 600 }}>{c.admin_name || 'Admin'}</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{c.admin_email}</div>
+                  </td>
+                  <td style={{ padding: '0.85rem 1rem' }}>
+                    <span
+                      className={`role-badge ${c.status === 'APPROVED' ? 'SUPER_ADMIN' : c.status === 'REJECTED' ? 'STUDENT' : 'CLUB'}`}
+                      style={{
+                        color: c.status === 'APPROVED' ? 'var(--role-admin)' : c.status === 'REJECTED' ? 'var(--error-color)' : 'var(--role-club)',
+                        background: c.status === 'APPROVED' ? 'rgba(16, 185, 129, 0.15)' : c.status === 'REJECTED' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                      }}
+                    >
+                      {c.status}
+                    </span>
+                  </td>
+                  <td style={{ padding: '0.85rem 1rem' }}>
+                    <div style={{ display: 'flex', gap: '0.4rem' }}>
+                      {c.status !== 'APPROVED' && (
+                        <button
+                          className="btn btn-primary"
+                          style={{ background: 'var(--role-admin)', padding: '0.3rem 0.6rem', fontSize: '0.75rem' }}
+                          onClick={() => handleClubStatus(c.id, 'APPROVED')}
+                          title="Approve Club"
+                        >
+                          <Check size={13} /> Approve
+                        </button>
+                      )}
+                      {c.status !== 'REJECTED' && (
+                        <button
+                          className="btn btn-secondary"
+                          style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', color: 'var(--error-color)' }}
+                          onClick={() => handleClubStatus(c.id, 'REJECTED')}
+                          title="Reject Club"
+                        >
+                          <X size={13} /> Reject
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
 
       {/* User Directory */}

@@ -17,9 +17,18 @@ export async function runMigrations() {
       full_name VARCHAR(255) NOT NULL,
       role VARCHAR(50) NOT NULL CHECK (role IN ('SUPER_ADMIN', 'CLUB', 'TNP', 'STUDENT')),
       department VARCHAR(100),
+      roll_number VARCHAR(100) UNIQUE,
+      division VARCHAR(50),
+      year VARCHAR(50),
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
   `);
+
+  // Ensure columns exist on existing users table
+  await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS roll_number VARCHAR(100);`);
+  await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS division VARCHAR(50);`);
+  await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS year VARCHAR(50);`);
+  await query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_roll_number ON users (roll_number) WHERE roll_number IS NOT NULL;`);
 
   // Create Session table for express-session storage
   await query(`
@@ -95,7 +104,37 @@ export async function runMigrations() {
     );
   `);
 
-  console.log('✅ Migrations completed. Tables "users", "session", "categories", "events", "student_activities", and "certificates" are ready.');
+  // Create Clubs table
+  await query(`
+    CREATE TABLE IF NOT EXISTS clubs (
+      id VARCHAR(36) PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      description TEXT,
+      administrator_user_id VARCHAR(36) REFERENCES users(id) ON DELETE CASCADE,
+      status VARCHAR(50) NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED')),
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // Create Club Events table
+  await query(`
+    CREATE TABLE IF NOT EXISTS club_events (
+      id VARCHAR(36) PRIMARY KEY,
+      club_id VARCHAR(36) REFERENCES clubs(id) ON DELETE CASCADE NOT NULL,
+      title VARCHAR(255) NOT NULL,
+      description TEXT,
+      event_date DATE NOT NULL,
+      start_time VARCHAR(50),
+      end_time VARCHAR(50),
+      venue VARCHAR(255),
+      points INT NOT NULL DEFAULT 10,
+      status VARCHAR(50) NOT NULL DEFAULT 'UPCOMING' CHECK (status IN ('UPCOMING', 'COMPLETED', 'CANCELLED')),
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  console.log('✅ Migrations completed. Tables "users", "session", "categories", "events", "student_activities", "certificates", "clubs", and "club_events" are ready.');
 }
 
 if (process.argv[1]?.endsWith('migrate.ts') || process.argv[1]?.endsWith('migrate.js')) {

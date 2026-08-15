@@ -1,18 +1,42 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Category, EventItem, ActivityClaim, ActivitySummary, Certificate } from '../types';
-import { apiGetCategories, apiGetEvents, apiGetActivities, apiSubmitClaim, apiGetCertificateStatus, apiIssueCertificate } from '../api/domain';
-import { Award, PlusCircle, CheckCircle2, Clock, XCircle, FileCheck, Sparkles, Calendar, MapPin } from 'lucide-react';
+import { Category, EventItem, ActivityClaim, ActivitySummary, Certificate, ClubEvent } from '../types';
+import {
+  apiGetCategories,
+  apiGetEvents,
+  apiGetActivities,
+  apiSubmitClaim,
+  apiGetCertificateStatus,
+  apiIssueCertificate,
+  apiGetUpcomingClubEvents,
+} from '../api/domain';
+import {
+  Award,
+  PlusCircle,
+  CheckCircle2,
+  Clock,
+  XCircle,
+  FileCheck,
+  Sparkles,
+  Calendar,
+  MapPin,
+  Edit3,
+  UserCheck,
+  Building2,
+} from 'lucide-react';
+import { ProfileCompletionModal } from './ProfileCompletionModal';
 
 export const StudentDashboard: React.FC = () => {
   const { user } = useAuth();
   const [categories, setCategories] = useState<Category[]>([]);
   const [events, setEvents] = useState<EventItem[]>([]);
   const [activities, setActivities] = useState<ActivityClaim[]>([]);
+  const [clubEvents, setClubEvents] = useState<ClubEvent[]>([]);
   const [summary, setSummary] = useState<ActivitySummary | null>(null);
   const [certData, setCertData] = useState<Certificate | null>(null);
   const [loading, setLoading] = useState(true);
   const [showClaimModal, setShowClaimModal] = useState(false);
+  const [showEditProfile, setShowEditProfile] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   // Form State
@@ -26,17 +50,19 @@ export const StudentDashboard: React.FC = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [catList, evtList, actRes, certRes] = await Promise.all([
+      const [catList, evtList, actRes, certRes, clubEvtList] = await Promise.all([
         apiGetCategories(),
         apiGetEvents(),
         apiGetActivities(),
         apiGetCertificateStatus(),
+        apiGetUpcomingClubEvents(),
       ]);
 
       setCategories(catList);
       if (catList.length > 0 && !categoryId) setCategoryId(catList[0].id);
       setEvents(evtList);
       setActivities(actRes.activities);
+      setClubEvents(clubEvtList || []);
       if (actRes.summary) setSummary(actRes.summary);
       setCertData(certRes.certificate);
     } catch (err: any) {
@@ -105,10 +131,42 @@ export const StudentDashboard: React.FC = () => {
             </h2>
             <p>Mandatory 100 activity points requirement for degree completion</p>
           </div>
-          <button className="btn btn-primary" onClick={() => setShowClaimModal(true)}>
-            <PlusCircle size={16} />
-            Claim Activity Points
-          </button>
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <button className="btn btn-secondary" onClick={() => setShowEditProfile(true)}>
+              <Edit3 size={16} />
+              Edit Profile
+            </button>
+            <button className="btn btn-primary" onClick={() => setShowClaimModal(true)}>
+              <PlusCircle size={16} />
+              Claim Activity Points
+            </button>
+          </div>
+        </div>
+
+        {/* Student Academic Profile Badges */}
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid rgba(255, 255, 255, 0.1)', fontSize: '0.825rem' }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: 'rgba(0,0,0,0.25)', padding: '0.3rem 0.65rem', borderRadius: 'var(--radius-sm)' }}>
+            <span style={{ color: 'var(--text-muted)' }}>Roll No:</span>
+            <strong style={{ color: 'var(--text-main)' }}>{user?.roll_number || 'N/A'}</strong>
+          </div>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: 'rgba(0,0,0,0.25)', padding: '0.3rem 0.65rem', borderRadius: 'var(--radius-sm)' }}>
+            <span style={{ color: 'var(--text-muted)' }}>Department:</span>
+            <strong style={{ color: 'var(--text-main)' }}>
+              {user?.department === 'COMPS' ? 'Computer Engineering (COMPS)' : user?.department === 'IT' ? 'Information Technology (IT)' : user?.department || 'N/A'}
+            </strong>
+          </div>
+          {user?.division && (
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: 'rgba(0,0,0,0.25)', padding: '0.3rem 0.65rem', borderRadius: 'var(--radius-sm)' }}>
+              <span style={{ color: 'var(--text-muted)' }}>Division:</span>
+              <strong style={{ color: 'var(--text-main)' }}>{user.division}</strong>
+            </div>
+          )}
+          {user?.year && (
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: 'rgba(0,0,0,0.25)', padding: '0.3rem 0.65rem', borderRadius: 'var(--radius-sm)' }}>
+              <span style={{ color: 'var(--text-muted)' }}>Year:</span>
+              <strong style={{ color: 'var(--text-main)' }}>{user.year}</strong>
+            </div>
+          )}
         </div>
 
         {/* Progress Bar Gauge */}
@@ -198,8 +256,71 @@ export const StudentDashboard: React.FC = () => {
         })}
       </div>
 
+      {/* Upcoming Club Events (Fixed Points from Approved Clubs) */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.75rem' }}>
+        <h3 style={{ fontSize: '1.15rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          <Calendar size={18} style={{ color: 'var(--role-club)' }} />
+          Upcoming Club Events ({clubEvents.length})
+        </h3>
+      </div>
+
+      <div className="card-grid">
+        {clubEvents.length === 0 ? (
+          <div className="info-card" style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '1.5rem', color: 'var(--text-muted)' }}>
+            No upcoming club events scheduled currently. Check back soon!
+          </div>
+        ) : (
+          clubEvents.map((ce) => (
+            <div className="info-card" key={ce.id}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
+                <span className="role-badge CLUB" style={{ fontSize: '0.725rem', padding: '0.2rem 0.5rem' }}>
+                  <Building2 size={12} /> {ce.club_name || 'Approved Club'}
+                </span>
+                <span
+                  className="role-badge"
+                  style={{
+                    color: 'var(--primary)',
+                    background: 'rgba(14, 165, 233, 0.15)',
+                    border: '1px solid rgba(14, 165, 233, 0.3)',
+                    fontWeight: 700,
+                  }}
+                >
+                  +{ce.points} Pts
+                </span>
+              </div>
+
+              <h4 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
+                {ce.title}
+              </h4>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.75rem', lineHeight: 1.4 }}>
+                {ce.description || 'No description provided.'}
+              </p>
+
+              <div style={{ fontSize: '0.775rem', color: 'var(--text-dim)', display: 'flex', flexDirection: 'column', gap: '0.3rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.65rem' }}>
+                <span>
+                  <Calendar size={12} style={{ display: 'inline', marginRight: 4, color: 'var(--primary)' }} />
+                  <strong>Date:</strong> {ce.event_date ? ce.event_date.split('T')[0] : ''}
+                </span>
+                {(ce.start_time || ce.end_time) && (
+                  <span>
+                    <Clock size={12} style={{ display: 'inline', marginRight: 4, color: 'var(--role-club)' }} />
+                    <strong>Time:</strong> {ce.start_time} - {ce.end_time}
+                  </span>
+                )}
+                {ce.venue && (
+                  <span>
+                    <MapPin size={12} style={{ display: 'inline', marginRight: 4, color: '#ec4899' }} />
+                    <strong>Venue:</strong> {ce.venue}
+                  </span>
+                )}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
       {/* My Submitted Activity Claims Table */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.5rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.75rem' }}>
         <h3 style={{ fontSize: '1.15rem', fontWeight: 700 }}>My Activity Claims ({activities.length})</h3>
       </div>
 
@@ -339,6 +460,14 @@ export const StudentDashboard: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Edit Profile Modal */}
+      {showEditProfile && (
+        <ProfileCompletionModal
+          isMandatory={false}
+          onClose={() => setShowEditProfile(false)}
+        />
       )}
     </div>
   );

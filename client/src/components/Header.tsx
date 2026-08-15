@@ -24,7 +24,10 @@ export const Header: React.FC = () => {
             <RoleBadge role={user.role} />
             <div className="user-info">
               <span className="user-name">{user.full_name}</span>
-              <span className="user-dept">{user.department || user.email}</span>
+              <span className="user-dept">
+                {user.roll_number ? `${user.roll_number} • ` : ''}
+                {user.department || user.email}
+              </span>
             </div>
             <button className="btn btn-secondary" onClick={() => logout()} title="Sign Out">
               <LogOut size={16} />

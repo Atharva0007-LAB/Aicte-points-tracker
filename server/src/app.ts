@@ -9,6 +9,8 @@ import eventRoutes from './routes/event.routes';
 import activityRoutes from './routes/activity.routes';
 import certificateRoutes from './routes/certificate.routes';
 import adminRoutes from './routes/admin.routes';
+import clubRoutes from './routes/club.routes';
+import clubEventRoutes from './routes/club-event.routes';
 import { errorHandler } from './middleware/error.middleware';
 import { query } from './db/index';
 
@@ -99,6 +101,8 @@ export function createApp() {
   app.use('/api/activities', activityRoutes);
   app.use('/api/certificates', certificateRoutes);
   app.use('/api/admin', adminRoutes);
+  app.use('/api/clubs', clubRoutes);
+  app.use('/api/club-events', clubEventRoutes);
 
   // Centralized Error Handling
   app.use(errorHandler);

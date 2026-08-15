@@ -18,7 +18,7 @@ export async function requireAuth(
     }
 
     const { rows } = await query<User>(
-      'SELECT id, email, full_name, role, department, created_at FROM users WHERE id = $1',
+      'SELECT id, email, full_name, role, department, roll_number, division, year, created_at FROM users WHERE id = $1',
       [req.session.userId]
     );
 

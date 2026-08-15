@@ -1,4 +1,4 @@
-import { Category, EventItem, ActivityClaim, ActivitySummary, Certificate, User } from '../types';
+import { Category, EventItem, ActivityClaim, ActivitySummary, Certificate, User, Club, ClubEvent, ClubStatus } from '../types';
 
 const API_BASE = '/api';
 
@@ -25,7 +25,7 @@ export async function apiGetCategories(): Promise<Category[]> {
   return data.categories;
 }
 
-// Events
+// Events (AICTE General Events)
 export async function apiGetEvents(): Promise<EventItem[]> {
   const res = await fetch(`${API_BASE}/events`, { credentials: 'include' });
   const data = await handleResponse(res);
@@ -48,6 +48,81 @@ export async function apiDeleteEvent(id: string): Promise<void> {
     credentials: 'include',
   });
   await handleResponse(res);
+}
+
+// Club Applications & Management
+export async function apiGetClubs(): Promise<Club[]> {
+  const res = await fetch(`${API_BASE}/clubs`, { credentials: 'include' });
+  const data = await handleResponse(res);
+  return data.clubs;
+}
+
+export async function apiGetMyClub(): Promise<{ club: Club | null }> {
+  const res = await fetch(`${API_BASE}/clubs/my`, { credentials: 'include' });
+  return await handleResponse(res);
+}
+
+export async function apiUpdateClubStatus(id: string, status: ClubStatus): Promise<Club> {
+  const res = await fetch(`${API_BASE}/clubs/${id}/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ status }),
+  });
+  const data = await handleResponse(res);
+  return data.club;
+}
+
+// Fixed-Points Club Events System
+export async function apiGetUpcomingClubEvents(): Promise<ClubEvent[]> {
+  const res = await fetch(`${API_BASE}/club-events/upcoming`, { credentials: 'include' });
+  const data = await handleResponse(res);
+  return data.events || [];
+}
+
+export async function apiGetMyClubEvents(): Promise<ClubEvent[]> {
+  const res = await fetch(`${API_BASE}/club-events/my`, { credentials: 'include' });
+  const data = await handleResponse(res);
+  return data.events || [];
+}
+
+export async function apiCreateClubEvent(eventData: {
+  title: string;
+  description?: string;
+  event_date: string;
+  start_time?: string;
+  end_time?: string;
+  venue?: string;
+  points: number;
+}): Promise<{ event: ClubEvent; message: string }> {
+  const res = await fetch(`${API_BASE}/club-events`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(eventData),
+  });
+  return await handleResponse(res);
+}
+
+export async function apiUpdateClubEvent(
+  id: string,
+  eventData: Partial<ClubEvent>
+): Promise<{ event: ClubEvent; message: string }> {
+  const res = await fetch(`${API_BASE}/club-events/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(eventData),
+  });
+  return await handleResponse(res);
+}
+
+export async function apiCancelClubEvent(id: string): Promise<{ event: ClubEvent; message: string }> {
+  const res = await fetch(`${API_BASE}/club-events/${id}/cancel`, {
+    method: 'PATCH',
+    credentials: 'include',
+  });
+  return await handleResponse(res);
 }
 
 // Activities

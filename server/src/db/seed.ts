@@ -263,6 +263,74 @@ export async function seedDatabase() {
   }
   console.log('🏆 Seeded Sample Student Activity Points (Alex Morgan: 90/100 points accumulated)');
 
+  // Seed Approved Club for Alex's college
+  await query(
+    `
+    INSERT INTO clubs (id, name, description, administrator_user_id, status)
+    VALUES ($1, $2, $3, $4, $5)
+    ON CONFLICT (id) DO UPDATE SET
+      name = EXCLUDED.name,
+      description = EXCLUDED.description,
+      status = EXCLUDED.status;
+  `,
+    [
+      'club_robotics_001',
+      'Robotics & Automation Club',
+      'Official robotics, IoT, and embedded systems engineering club.',
+      'usr_club_lead_001',
+      'APPROVED',
+    ]
+  );
+  console.log('🏛️ Seeded Approved Club: Robotics & Automation Club');
+
+  // Seed Sample Club Events (Fixed-point system)
+  const sampleClubEvents = [
+    {
+      id: 'cevt_001',
+      club_id: 'club_robotics_001',
+      title: 'Autonomous Rover Challenge 2026',
+      description: 'Design and race obstacle-avoiding autonomous mini-rovers. Hardware components provided on spot.',
+      event_date: '2026-09-10',
+      start_time: '10:00 AM',
+      end_time: '04:00 PM',
+      venue: 'Robotics Innovation Arena (Lab 4)',
+      points: 20,
+      status: 'UPCOMING',
+    },
+    {
+      id: 'cevt_002',
+      club_id: 'club_robotics_001',
+      title: 'Hands-on Drone Aerodynamics Bootcamp',
+      description: 'Comprehensive quadcopter assembly, calibration, and PID controller tuning workshop.',
+      event_date: '2026-09-24',
+      start_time: '02:00 PM',
+      end_time: '06:00 PM',
+      venue: 'Main College Ground & Tinkering Shed',
+      points: 15,
+      status: 'UPCOMING',
+    },
+  ];
+
+  for (const ce of sampleClubEvents) {
+    await query(
+      `
+      INSERT INTO club_events (id, club_id, title, description, event_date, start_time, end_time, venue, points, status)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      ON CONFLICT (id) DO UPDATE SET
+        title = EXCLUDED.title,
+        description = EXCLUDED.description,
+        event_date = EXCLUDED.event_date,
+        start_time = EXCLUDED.start_time,
+        end_time = EXCLUDED.end_time,
+        venue = EXCLUDED.venue,
+        points = EXCLUDED.points,
+        status = EXCLUDED.status;
+    `,
+      [ce.id, ce.club_id, ce.title, ce.description, ce.event_date, ce.start_time, ce.end_time, ce.venue, ce.points, ce.status]
+    );
+  }
+  console.log('🎯 Seeded Sample Fixed-Point Club Events');
+
   console.log('✅ Database seeding complete.');
 }
 
