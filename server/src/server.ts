@@ -1,7 +1,8 @@
 import { createApp } from './app';
 import { config } from './config/env';
 import { testConnection } from './db/index';
-import { seedDatabase } from './db/seed';
+import { runMigrations } from './db/migrate';
+import { seedDatabase, needsSeeding } from './db/seed';
 
 async function startServer() {
   console.log('⚡ Initializing AICTE Points Tracker Backend...');
@@ -10,7 +11,20 @@ async function startServer() {
     const isDbConnected = await testConnection();
     if (isDbConnected) {
       console.log('✅ PostgreSQL database connection verified.');
-      await seedDatabase();
+
+      // Migrations are safe to run on every boot (CREATE TABLE IF NOT EXISTS).
+      await runMigrations();
+
+      // Seeding is destructive (resets demo data) and must only ever run
+      // once, against a genuinely empty database — never on every restart,
+      // or real production data (memberships, registrations, attendance,
+      // claims) would be wiped every time the server restarts.
+      const shouldSeed = await needsSeeding();
+      if (shouldSeed) {
+        await seedDatabase();
+      } else {
+        console.log('ℹ️ Database already has data — skipping seed, migrations only.');
+      }
     } else {
       console.warn('⚠️ Could not verify DB connection on boot. Will retry on request.');
     }
