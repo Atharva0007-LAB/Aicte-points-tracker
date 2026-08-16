@@ -62,7 +62,9 @@ class CustomPgStore extends session.Store {
 
 export function createApp() {
   const app = express();
-
+   if (config.nodeEnv === 'production') {
+    app.set('trust proxy', 1);
+  }
   // CORS setup for local dev credentials
   app.use(
     cors({
