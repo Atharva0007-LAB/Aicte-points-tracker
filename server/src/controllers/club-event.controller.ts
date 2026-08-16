@@ -192,13 +192,24 @@ export async function cancelClubEvent(req: AuthenticatedRequest, res: Response, 
 
 export async function getUpcomingClubEvents(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   try {
-    const { rows } = await query<ClubEvent>(
-      `SELECT ce.id, ce.club_id, ce.title, ce.description, ce.event_date, ce.start_time, ce.end_time, ce.venue, ce.points, ce.status, ce.created_at,
-              c.name as club_name
+    const studentId = req.user?.id || null;
+
+    const { rows } = await query<ClubEvent & { attendance_confirmed: boolean }>(
+      `SELECT ce.id, ce.club_id, ce.title, ce.description, ce.event_date, ce.start_time, ce.end_time, ce.venue, ce.points, ce.status, ce.attendance_confirmed, ce.created_at,
+              c.name as club_name,
+              (SELECT COUNT(*) FROM event_registrations er WHERE er.event_id = ce.id)::int as registration_count,
+              CASE WHEN $1::text IS NOT NULL AND EXISTS(
+                SELECT 1 FROM event_registrations er2 WHERE er2.event_id = ce.id AND er2.student_id = $1
+              ) THEN TRUE ELSE FALSE END as is_registered,
+              CASE WHEN $1::text IS NOT NULL AND EXISTS(
+                SELECT 1 FROM club_memberships cm WHERE cm.club_id = ce.club_id AND cm.student_id = $1 AND cm.status = 'ACCEPTED'
+              ) THEN TRUE ELSE FALSE END as is_member,
+              (SELECT cm2.status FROM club_memberships cm2 WHERE cm2.club_id = ce.club_id AND cm2.student_id = $1) as membership_status
        FROM club_events ce
        JOIN clubs c ON ce.club_id = c.id
        WHERE c.status = 'APPROVED' AND ce.status = 'UPCOMING'
-       ORDER BY ce.event_date ASC, ce.created_at ASC`
+       ORDER BY ce.event_date ASC, ce.created_at ASC`,
+      [studentId]
     );
 
     res.status(200).json({ events: rows });
@@ -206,3 +217,255 @@ export async function getUpcomingClubEvents(req: AuthenticatedRequest, res: Resp
     next(err);
   }
 }
+
+// Student: Register for a club event (Members only)
+export async function registerForEvent(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  try {
+    if (!req.user) {
+      throw new ApiError(401, 'Not authenticated');
+    }
+
+    const { id } = req.params; // event_id
+    const studentId = req.user.id;
+
+    // Fetch event details
+    const eventQuery = await query<ClubEvent & { attendance_confirmed: boolean }>(
+      'SELECT id, club_id, title, status, attendance_confirmed FROM club_events WHERE id = $1',
+      [id]
+    );
+
+    if (eventQuery.rows.length === 0) {
+      throw new ApiError(404, 'Event not found');
+    }
+
+    const event = eventQuery.rows[0];
+
+    if (event.status === 'CANCELLED') {
+      throw new ApiError(400, 'Cannot register for a cancelled event');
+    }
+
+    if (event.attendance_confirmed) {
+      throw new ApiError(400, 'Registration is closed. Attendance has already been confirmed for this event.');
+    }
+
+    // Verify student is an ACCEPTED member of the club
+    const memberQuery = await query(
+      'SELECT id, status FROM club_memberships WHERE club_id = $1 AND student_id = $2',
+      [event.club_id, studentId]
+    );
+
+    if (memberQuery.rows.length === 0 || memberQuery.rows[0].status !== 'ACCEPTED') {
+      throw new ApiError(403, 'Event registration is restricted to accepted club members only. Please join the club first.');
+    }
+
+    // Check if already registered
+    const regCheck = await query(
+      'SELECT id FROM event_registrations WHERE event_id = $1 AND student_id = $2',
+      [id, studentId]
+    );
+
+    if (regCheck.rows.length > 0) {
+      return res.status(200).json({ message: 'Already registered for this event' });
+    }
+
+    const regId = `ereg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    await query(
+      'INSERT INTO event_registrations (id, event_id, student_id) VALUES ($1, $2, $3)',
+      [regId, id, studentId]
+    );
+
+    res.status(201).json({ message: 'Registered for event successfully' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Student: Unregister from a club event (only before attendance confirmation)
+export async function unregisterFromEvent(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  try {
+    if (!req.user) {
+      throw new ApiError(401, 'Not authenticated');
+    }
+
+    const { id } = req.params; // event_id
+    const studentId = req.user.id;
+
+    // Fetch event details
+    const eventQuery = await query<ClubEvent & { attendance_confirmed: boolean }>(
+      'SELECT id, attendance_confirmed FROM club_events WHERE id = $1',
+      [id]
+    );
+
+    if (eventQuery.rows.length === 0) {
+      throw new ApiError(404, 'Event not found');
+    }
+
+    const event = eventQuery.rows[0];
+
+    if (event.attendance_confirmed) {
+      throw new ApiError(400, 'Cannot unregister after event attendance has been confirmed.');
+    }
+
+    await query(
+      'DELETE FROM event_registrations WHERE event_id = $1 AND student_id = $2',
+      [id, studentId]
+    );
+
+    res.status(200).json({ message: 'Unregistered from event successfully' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Club Lead: Get registered attendees for an event with academic details & attendance status
+export async function getEventAttendees(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  try {
+    if (!req.user) {
+      throw new ApiError(401, 'Not authenticated');
+    }
+
+    const { id } = req.params; // event_id
+
+    // Verify club owns this event
+    const clubQuery = await query<Club>(
+      'SELECT id FROM clubs WHERE administrator_user_id = $1',
+      [req.user.id]
+    );
+
+    if (clubQuery.rows.length === 0) {
+      throw new ApiError(403, 'Forbidden - Only club administrators can view event attendees');
+    }
+
+    const clubId = clubQuery.rows[0].id;
+    const eventQuery = await query<ClubEvent & { attendance_confirmed: boolean }>(
+      'SELECT * FROM club_events WHERE id = $1 AND club_id = $2',
+      [id, clubId]
+    );
+
+    if (eventQuery.rows.length === 0) {
+      throw new ApiError(404, 'Event not found or does not belong to your club');
+    }
+
+    const event = eventQuery.rows[0];
+
+    // Fetch registered attendees
+    const { rows } = await query(
+      `SELECT er.student_id, u.full_name as student_name, u.email, u.roll_number, u.department, u.division, u.year,
+              er.created_at as registered_at,
+              ea.present
+       FROM event_registrations er
+       JOIN users u ON er.student_id = u.id
+       LEFT JOIN event_attendance ea ON ea.event_id = er.event_id AND ea.student_id = er.student_id
+       WHERE er.event_id = $1
+       ORDER BY u.full_name ASC`,
+      [id]
+    );
+
+    res.status(200).json({
+      event,
+      attendees: rows,
+      attendance_confirmed: Boolean(event.attendance_confirmed),
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Club Lead: Confirm attendance & automatically grant points
+export async function confirmEventAttendance(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  try {
+    if (!req.user) {
+      throw new ApiError(401, 'Not authenticated');
+    }
+
+    const { id } = req.params; // event_id
+    const { attendance } = req.body; // Array of { student_id: string, present: boolean }
+
+    if (!Array.isArray(attendance)) {
+      throw new ApiError(400, 'Attendance must be provided as an array of student attendance records');
+    }
+
+    // Verify club owns this event
+    const clubQuery = await query<Club>(
+      'SELECT id FROM clubs WHERE administrator_user_id = $1',
+      [req.user.id]
+    );
+
+    if (clubQuery.rows.length === 0) {
+      throw new ApiError(403, 'Forbidden - Only club administrators can confirm event attendance');
+    }
+
+    const clubId = clubQuery.rows[0].id;
+    const eventQuery = await query<ClubEvent & { attendance_confirmed: boolean }>(
+      'SELECT * FROM club_events WHERE id = $1 AND club_id = $2',
+      [id, clubId]
+    );
+
+    if (eventQuery.rows.length === 0) {
+      throw new ApiError(404, 'Event not found or does not belong to your club');
+    }
+
+    const event = eventQuery.rows[0];
+
+    if (event.attendance_confirmed) {
+      throw new ApiError(400, 'Attendance for this event has already been confirmed and locked.');
+    }
+
+    // Record attendance for all submitted records
+    for (const record of attendance) {
+      const studentId = record.student_id;
+      const isPresent = Boolean(record.present);
+      const attId = `att_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
+      await query(
+        `INSERT INTO event_attendance (id, event_id, student_id, present)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (event_id, student_id) DO UPDATE SET present = EXCLUDED.present`,
+        [attId, id, studentId, isPresent]
+      );
+
+      // If present, auto-grant points into student_activities directly
+      if (isPresent) {
+        // Check if student already has a record for this club_event_id
+        const existingAct = await query(
+          'SELECT id FROM student_activities WHERE club_event_id = $1 AND student_id = $2',
+          [id, studentId]
+        );
+
+        if (existingAct.rows.length === 0) {
+          const userQuery = await query<{ full_name: string }>('SELECT full_name FROM users WHERE id = $1', [studentId]);
+          const studentName = userQuery.rows[0]?.full_name || 'Student';
+          const actId = `act_cevt_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
+          await query(
+            `INSERT INTO student_activities
+              (id, student_id, student_name, event_id, club_event_id, category_id, title, points_requested, points_awarded, proof_details, target_type, target_club_id, status, reviewed_by, reviewer_role)
+             VALUES
+              ($1, $2, $3, NULL, $4, 'cat_club_event', $5, $6, $6, 'Auto-awarded for confirmed attendance', 'CLUB', $7, 'APPROVED', $8, 'CLUB')`,
+            [
+              actId,
+              studentId,
+              studentName,
+              id,
+              event.title,
+              event.points,
+              clubId,
+              req.user.id,
+            ]
+          );
+        }
+      }
+    }
+
+    // Lock attendance on the event
+    await query('UPDATE club_events SET attendance_confirmed = TRUE WHERE id = $1', [id]);
+
+    res.status(200).json({
+      message: 'Attendance confirmed and points auto-awarded successfully',
+      attendance_confirmed: true,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Category, EventItem, ActivityClaim, ActivitySummary, Certificate, ClubEvent } from '../types';
+import { Category, EventItem, ActivityClaim, ActivitySummary, Certificate, ClubEvent, Club, ClubMembership } from '../types';
 import {
   apiGetCategories,
   apiGetEvents,
@@ -9,6 +9,11 @@ import {
   apiGetCertificateStatus,
   apiIssueCertificate,
   apiGetUpcomingClubEvents,
+  apiGetClubs,
+  apiGetMyMemberships,
+  apiRequestClubMembership,
+  apiRegisterClubEvent,
+  apiUnregisterClubEvent,
 } from '../api/domain';
 import {
   Award,
@@ -23,6 +28,8 @@ import {
   Edit3,
   UserCheck,
   Building2,
+  Users,
+  AlertCircle,
 } from 'lucide-react';
 import { ProfileCompletionModal } from './ProfileCompletionModal';
 
@@ -32,30 +39,33 @@ export const StudentDashboard: React.FC = () => {
   const [events, setEvents] = useState<EventItem[]>([]);
   const [activities, setActivities] = useState<ActivityClaim[]>([]);
   const [clubEvents, setClubEvents] = useState<ClubEvent[]>([]);
+  const [clubs, setClubs] = useState<Club[]>([]);
+  const [memberships, setMemberships] = useState<ClubMembership[]>([]);
   const [summary, setSummary] = useState<ActivitySummary | null>(null);
   const [certData, setCertData] = useState<Certificate | null>(null);
   const [loading, setLoading] = useState(true);
   const [showClaimModal, setShowClaimModal] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   // Form State
   const [title, setTitle] = useState('');
   const [categoryId, setCategoryId] = useState('');
-  const [eventId, setEventId] = useState('');
-  const [pointsRequested, setPointsRequested] = useState(15);
+  const [targetRecipient, setTargetRecipient] = useState('TNP'); // 'TNP' or 'CLUB:<id>'
   const [proofDetails, setProofDetails] = useState('');
-  const [message, setMessage] = useState<string | null>(null);
 
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [catList, evtList, actRes, certRes, clubEvtList] = await Promise.all([
+      const [catList, evtList, actRes, certRes, clubEvtList, clubList, membList] = await Promise.all([
         apiGetCategories(),
         apiGetEvents(),
         apiGetActivities(),
         apiGetCertificateStatus(),
         apiGetUpcomingClubEvents(),
+        apiGetClubs(),
+        apiGetMyMemberships(),
       ]);
 
       setCategories(catList);
@@ -63,6 +73,9 @@ export const StudentDashboard: React.FC = () => {
       setEvents(evtList);
       setActivities(actRes.activities);
       setClubEvents(clubEvtList || []);
+      const approvedClubs = (clubList || []).filter((c) => c.status === 'APPROVED');
+      setClubs(approvedClubs);
+      setMemberships(membList || []);
       if (actRes.summary) setSummary(actRes.summary);
       setCertData(certRes.certificate);
     } catch (err: any) {
@@ -78,19 +91,27 @@ export const StudentDashboard: React.FC = () => {
 
   const handleClaimSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title || !categoryId || !pointsRequested) return;
+    if (!title.trim() || !categoryId) return;
+
+    let target_type: 'CLUB' | 'TNP' = 'TNP';
+    let target_club_id: string | null = null;
+
+    if (targetRecipient.startsWith('CLUB:')) {
+      target_type = 'CLUB';
+      target_club_id = targetRecipient.replace('CLUB:', '');
+    }
 
     try {
       setSubmitting(true);
       await apiSubmitClaim({
-        title,
+        title: title.trim(),
         category_id: categoryId,
-        event_id: eventId || undefined,
-        points_requested: Number(pointsRequested),
-        proof_details: proofDetails,
+        target_type,
+        target_club_id,
+        proof_details: proofDetails.trim(),
       });
 
-      setMessage('Activity point claim submitted successfully!');
+      alert('Activity point claim submitted successfully!');
       setShowClaimModal(false);
       setTitle('');
       setProofDetails('');
@@ -99,6 +120,46 @@ export const StudentDashboard: React.FC = () => {
       alert(err.message || 'Failed to submit claim');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleRequestMembership = async (clubId: string) => {
+    try {
+      setActionLoading(`memb_${clubId}`);
+      await apiRequestClubMembership(clubId);
+      alert('Club membership request submitted successfully!');
+      await fetchData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to request membership');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleRegisterEvent = async (eventId: string) => {
+    try {
+      setActionLoading(`reg_${eventId}`);
+      await apiRegisterClubEvent(eventId);
+      alert('Successfully registered for event!');
+      await fetchData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to register for event');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleUnregisterEvent = async (eventId: string) => {
+    if (!confirm('Are you sure you want to unregister from this event?')) return;
+    try {
+      setActionLoading(`unreg_${eventId}`);
+      await apiUnregisterClubEvent(eventId);
+      alert('Successfully unregistered from event.');
+      await fetchData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to unregister from event');
+    } finally {
+      setActionLoading(null);
     }
   };
 
@@ -228,8 +289,196 @@ export const StudentDashboard: React.FC = () => {
         )}
       </div>
 
+      {/* College Clubs & Memberships Section (Part 2) */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem' }}>
+        <h3 style={{ fontSize: '1.15rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          <Building2 size={18} style={{ color: 'var(--role-club)' }} />
+          College Clubs & Membership ({clubs.length})
+        </h3>
+      </div>
+
+      <div className="card-grid">
+        {clubs.length === 0 ? (
+          <div className="info-card" style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '1.5rem', color: 'var(--text-muted)' }}>
+            No approved college clubs currently active.
+          </div>
+        ) : (
+          clubs.map((c) => {
+            const memb = memberships.find((m) => m.club_id === c.id);
+            const isAccepted = memb?.status === 'ACCEPTED';
+            const isPending = memb?.status === 'PENDING';
+            const isRejected = memb?.status === 'REJECTED';
+
+            return (
+              <div className="info-card" key={c.id}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
+                  <h4 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-main)' }}>{c.name}</h4>
+                  {isAccepted && (
+                    <span className="role-badge SUPER_ADMIN" style={{ fontSize: '0.725rem', padding: '0.2rem 0.5rem' }}>
+                      <UserCheck size={12} /> Member
+                    </span>
+                  )}
+                  {isPending && (
+                    <span className="role-badge CLUB" style={{ fontSize: '0.725rem', padding: '0.2rem 0.5rem' }}>
+                      <Clock size={12} /> Pending Approval
+                    </span>
+                  )}
+                  {isRejected && (
+                    <span className="role-badge" style={{ color: '#ef4444', background: 'rgba(239,68,68,0.15)', fontSize: '0.725rem', padding: '0.2rem 0.5rem' }}>
+                      <XCircle size={12} /> Request Rejected
+                    </span>
+                  )}
+                </div>
+
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.85rem', lineHeight: 1.4 }}>
+                  {c.description || 'Official college student club.'}
+                </p>
+
+                <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '0.65rem' }}>
+                  {isAccepted ? (
+                    <div style={{ fontSize: '0.775rem', color: 'var(--role-admin)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                      <CheckCircle2 size={14} /> You are an active member. Eligible for club events!
+                    </div>
+                  ) : isPending ? (
+                    <div style={{ fontSize: '0.775rem', color: 'var(--role-club)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                      <Clock size={14} /> Membership request submitted. Waiting for club lead approval.
+                    </div>
+                  ) : (
+                    <button
+                      className="btn btn-primary"
+                      style={{ width: '100%', justifyContent: 'center', fontSize: '0.8rem', padding: '0.4rem 0.75rem' }}
+                      onClick={() => handleRequestMembership(c.id)}
+                      disabled={actionLoading === `memb_${c.id}`}
+                    >
+                      <Users size={14} />
+                      {actionLoading === `memb_${c.id}` ? 'Submitting...' : isRejected ? 'Re-request Membership' : 'Request Membership'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Upcoming Club Events (Members Only Registration - Part 3) */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.75rem' }}>
+        <h3 style={{ fontSize: '1.15rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          <Calendar size={18} style={{ color: 'var(--role-club)' }} />
+          Upcoming Club Events ({clubEvents.length})
+        </h3>
+      </div>
+
+      <div className="card-grid">
+        {clubEvents.length === 0 ? (
+          <div className="info-card" style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '1.5rem', color: 'var(--text-muted)' }}>
+            No upcoming club events scheduled currently. Check back soon!
+          </div>
+        ) : (
+          clubEvents.map((ce) => {
+            const isConfirmed = Boolean(ce.attendance_confirmed);
+            const isRegistered = Boolean(ce.is_registered);
+            const isMember = Boolean(ce.is_member);
+
+            return (
+              <div className="info-card" key={ce.id}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
+                  <span className="role-badge CLUB" style={{ fontSize: '0.725rem', padding: '0.2rem 0.5rem' }}>
+                    <Building2 size={12} /> {ce.club_name || 'Approved Club'}
+                  </span>
+                  <span
+                    className="role-badge"
+                    style={{
+                      color: 'var(--primary)',
+                      background: 'rgba(14, 165, 233, 0.15)',
+                      border: '1px solid rgba(14, 165, 233, 0.3)',
+                      fontWeight: 700,
+                    }}
+                  >
+                    +{ce.points} Pts
+                  </span>
+                </div>
+
+                <h4 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
+                  {ce.title}
+                </h4>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.75rem', lineHeight: 1.4 }}>
+                  {ce.description || 'No description provided.'}
+                </p>
+
+                <div style={{ fontSize: '0.775rem', color: 'var(--text-dim)', display: 'flex', flexDirection: 'column', gap: '0.3rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.65rem', marginBottom: '0.85rem' }}>
+                  <span>
+                    <Calendar size={12} style={{ display: 'inline', marginRight: 4, color: 'var(--primary)' }} />
+                    <strong>Date:</strong> {ce.event_date ? ce.event_date.split('T')[0] : ''}
+                  </span>
+                  {(ce.start_time || ce.end_time) && (
+                    <span>
+                      <Clock size={12} style={{ display: 'inline', marginRight: 4, color: 'var(--role-club)' }} />
+                      <strong>Time:</strong> {ce.start_time} - {ce.end_time}
+                    </span>
+                  )}
+                  {ce.venue && (
+                    <span>
+                      <MapPin size={12} style={{ display: 'inline', marginRight: 4, color: '#ec4899' }} />
+                      <strong>Venue:</strong> {ce.venue}
+                    </span>
+                  )}
+                </div>
+
+                {/* Event Registration Actions (Part 3) */}
+                <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
+                  {isConfirmed ? (
+                    <div style={{ fontSize: '0.775rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                      <CheckCircle2 size={13} style={{ color: 'var(--role-admin)' }} /> Attendance Confirmed / Completed
+                    </div>
+                  ) : isRegistered ? (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                      <span className="role-badge SUPER_ADMIN" style={{ fontSize: '0.725rem' }}>
+                        <CheckCircle2 size={12} /> Registered
+                      </span>
+                      <button
+                        className="btn btn-secondary"
+                        style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem', color: '#ef4444' }}
+                        onClick={() => handleUnregisterEvent(ce.id)}
+                        disabled={actionLoading === `unreg_${ce.id}`}
+                      >
+                        {actionLoading === `unreg_${ce.id}` ? 'Unregistering...' : 'Unregister'}
+                      </button>
+                    </div>
+                  ) : isMember ? (
+                    <button
+                      className="btn btn-primary"
+                      style={{ width: '100%', justifyContent: 'center', fontSize: '0.8rem', padding: '0.4rem 0.75rem' }}
+                      onClick={() => handleRegisterEvent(ce.id)}
+                      disabled={actionLoading === `reg_${ce.id}`}
+                    >
+                      <PlusCircle size={14} />
+                      {actionLoading === `reg_${ce.id}` ? 'Registering...' : 'Register for Event'}
+                    </button>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                      <button
+                        className="btn btn-secondary"
+                        style={{ width: '100%', justifyContent: 'center', fontSize: '0.8rem', padding: '0.4rem 0.75rem', opacity: 0.6, cursor: 'not-allowed' }}
+                        disabled
+                        title="You must be an accepted member of this club to register"
+                      >
+                        Register (Members Only)
+                      </button>
+                      <span style={{ fontSize: '0.725rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                        <AlertCircle size={11} /> Join {ce.club_name || 'club'} above to register
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
       {/* Category Breakdown Cards */}
-      <h3 style={{ fontSize: '1.15rem', fontWeight: 700, marginTop: '1rem' }}>AICTE Category Distribution</h3>
+      <h3 style={{ fontSize: '1.15rem', fontWeight: 700, marginTop: '1.75rem' }}>AICTE Category Distribution</h3>
       <div className="card-grid">
         {categories.map((cat) => {
           const catInfo = summary?.categoryTotals[cat.id] || { points: 0, max: cat.max_points };
@@ -256,72 +505,9 @@ export const StudentDashboard: React.FC = () => {
         })}
       </div>
 
-      {/* Upcoming Club Events (Fixed Points from Approved Clubs) */}
+      {/* My Submitted Activity Claims Table (Part 1 Ledger) */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.75rem' }}>
-        <h3 style={{ fontSize: '1.15rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-          <Calendar size={18} style={{ color: 'var(--role-club)' }} />
-          Upcoming Club Events ({clubEvents.length})
-        </h3>
-      </div>
-
-      <div className="card-grid">
-        {clubEvents.length === 0 ? (
-          <div className="info-card" style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '1.5rem', color: 'var(--text-muted)' }}>
-            No upcoming club events scheduled currently. Check back soon!
-          </div>
-        ) : (
-          clubEvents.map((ce) => (
-            <div className="info-card" key={ce.id}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
-                <span className="role-badge CLUB" style={{ fontSize: '0.725rem', padding: '0.2rem 0.5rem' }}>
-                  <Building2 size={12} /> {ce.club_name || 'Approved Club'}
-                </span>
-                <span
-                  className="role-badge"
-                  style={{
-                    color: 'var(--primary)',
-                    background: 'rgba(14, 165, 233, 0.15)',
-                    border: '1px solid rgba(14, 165, 233, 0.3)',
-                    fontWeight: 700,
-                  }}
-                >
-                  +{ce.points} Pts
-                </span>
-              </div>
-
-              <h4 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
-                {ce.title}
-              </h4>
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.75rem', lineHeight: 1.4 }}>
-                {ce.description || 'No description provided.'}
-              </p>
-
-              <div style={{ fontSize: '0.775rem', color: 'var(--text-dim)', display: 'flex', flexDirection: 'column', gap: '0.3rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.65rem' }}>
-                <span>
-                  <Calendar size={12} style={{ display: 'inline', marginRight: 4, color: 'var(--primary)' }} />
-                  <strong>Date:</strong> {ce.event_date ? ce.event_date.split('T')[0] : ''}
-                </span>
-                {(ce.start_time || ce.end_time) && (
-                  <span>
-                    <Clock size={12} style={{ display: 'inline', marginRight: 4, color: 'var(--role-club)' }} />
-                    <strong>Time:</strong> {ce.start_time} - {ce.end_time}
-                  </span>
-                )}
-                {ce.venue && (
-                  <span>
-                    <MapPin size={12} style={{ display: 'inline', marginRight: 4, color: '#ec4899' }} />
-                    <strong>Venue:</strong> {ce.venue}
-                  </span>
-                )}
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* My Submitted Activity Claims Table */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.75rem' }}>
-        <h3 style={{ fontSize: '1.15rem', fontWeight: 700 }}>My Activity Claims ({activities.length})</h3>
+        <h3 style={{ fontSize: '1.15rem', fontWeight: 700 }}>My Activity Claims Ledger ({activities.length})</h3>
       </div>
 
       <div className="info-card" style={{ padding: 0, overflow: 'hidden' }}>
@@ -330,7 +516,7 @@ export const StudentDashboard: React.FC = () => {
             <tr style={{ background: 'var(--bg-input)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
               <th style={{ padding: '0.85rem 1rem' }}>Activity Title</th>
               <th style={{ padding: '0.85rem 1rem' }}>Category</th>
-              <th style={{ padding: '0.85rem 1rem' }}>Requested Pts</th>
+              <th style={{ padding: '0.85rem 1rem' }}>Sent To</th>
               <th style={{ padding: '0.85rem 1rem' }}>Awarded Pts</th>
               <th style={{ padding: '0.85rem 1rem' }}>Status</th>
               <th style={{ padding: '0.85rem 1rem' }}>Proof / Notes</th>
@@ -348,9 +534,13 @@ export const StudentDashboard: React.FC = () => {
                 <tr key={act.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
                   <td style={{ padding: '0.85rem 1rem', fontWeight: 600 }}>{act.title}</td>
                   <td style={{ padding: '0.85rem 1rem', color: 'var(--text-muted)' }}>{act.category_name}</td>
-                  <td style={{ padding: '0.85rem 1rem' }}>{act.points_requested}</td>
+                  <td style={{ padding: '0.85rem 1rem', fontSize: '0.8rem' }}>
+                    <span className={`role-badge ${act.target_type === 'CLUB' ? 'CLUB' : 'TNP'}`} style={{ fontSize: '0.7rem' }}>
+                      {act.target_type === 'CLUB' ? act.target_club_name || 'Club' : 'T&P Cell'}
+                    </span>
+                  </td>
                   <td style={{ padding: '0.85rem 1rem', fontWeight: 700, color: act.status === 'APPROVED' ? 'var(--role-admin)' : 'var(--text-main)' }}>
-                    {act.status === 'APPROVED' ? `+${act.points_awarded}` : 0}
+                    {act.status === 'APPROVED' ? `+${act.points_awarded}` : act.status === 'REJECTED' ? 0 : 'Pending'}
                   </td>
                   <td style={{ padding: '0.85rem 1rem' }}>
                     {act.status === 'APPROVED' && (
@@ -369,7 +559,14 @@ export const StudentDashboard: React.FC = () => {
                       </span>
                     )}
                   </td>
-                  <td style={{ padding: '0.85rem 1rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{act.proof_details}</td>
+                  <td style={{ padding: '0.85rem 1rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    {act.proof_details}
+                    {act.rejection_reason && (
+                      <div style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: '0.2rem' }}>
+                        Reason: {act.rejection_reason}
+                      </div>
+                    )}
+                  </td>
                 </tr>
               ))
             )}
@@ -377,7 +574,7 @@ export const StudentDashboard: React.FC = () => {
         </table>
       </div>
 
-      {/* Claim Points Modal */}
+      {/* Claim Points Modal (Part 1 Reworked) */}
       {showClaimModal && (
         <div
           style={{
@@ -389,12 +586,13 @@ export const StudentDashboard: React.FC = () => {
             alignItems: 'center',
             justifyContent: 'center',
             zIndex: 1000,
+            padding: '1rem',
           }}
         >
-          <div className="auth-card" style={{ maxWidth: '500px' }}>
-            <h3 style={{ fontSize: '1.25rem', fontWeight: 700, marginBottom: '0.5rem' }}>Submit Activity Point Claim</h3>
+          <div className="auth-card" style={{ maxWidth: '520px', width: '100%' }}>
+            <h3 style={{ fontSize: '1.25rem', fontWeight: 700, marginBottom: '0.35rem' }}>Submit Activity Point Claim</h3>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>
-              Upload details of your participation to claim AICTE points.
+              Submit your participation claim for reviewer evaluation. Reviewers award AICTE points upon approval.
             </p>
 
             <form onSubmit={handleClaimSubmit}>
@@ -403,11 +601,28 @@ export const StudentDashboard: React.FC = () => {
                 <input
                   type="text"
                   className="form-control"
-                  placeholder="e.g. National Hackathon Winner or NSS Tree Plantation"
+                  placeholder="e.g. National Hackathon 1st Runner Up or 8-Week Corporate Internship"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   required
                 />
+              </div>
+
+              <div className="form-group">
+                <label>Send Request To (Reviewing Authority)</label>
+                <select
+                  className="form-control"
+                  value={targetRecipient}
+                  onChange={(e) => setTargetRecipient(e.target.value)}
+                  required
+                >
+                  <option value="TNP">💼 Training & Placement (T&P Cell) — Internships & Corporate Training</option>
+                  {clubs.map((c) => (
+                    <option key={c.id} value={`CLUB:${c.id}`}>
+                      🏛️ {c.name} (Club Reviewer)
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="form-group">
@@ -422,24 +637,11 @@ export const StudentDashboard: React.FC = () => {
               </div>
 
               <div className="form-group">
-                <label>Points Requested</label>
-                <input
-                  type="number"
-                  className="form-control"
-                  min={5}
-                  max={40}
-                  value={pointsRequested}
-                  onChange={(e) => setPointsRequested(Number(e.target.value))}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
                 <label>Proof / Certificate Details</label>
                 <textarea
                   className="form-control"
                   rows={3}
-                  placeholder="Paste certificate link, registration ID, or event details..."
+                  placeholder="Paste certificate link, registration ID, or participation documentation..."
                   value={proofDetails}
                   onChange={(e) => setProofDetails(e.target.value)}
                 />
@@ -447,7 +649,7 @@ export const StudentDashboard: React.FC = () => {
 
               <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem' }}>
                 <button type="submit" className="btn btn-primary" style={{ flex: 1, justifyContent: 'center' }} disabled={submitting}>
-                  {submitting ? 'Submitting...' : 'Submit Claim'}
+                  {submitting ? 'Submitting Claim...' : 'Submit Claim'}
                 </button>
                 <button
                   type="button"
@@ -472,3 +674,4 @@ export const StudentDashboard: React.FC = () => {
     </div>
   );
 };
+

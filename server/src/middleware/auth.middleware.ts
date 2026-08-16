@@ -54,3 +54,27 @@ export function requireRole(allowedRoles: UserRole[]) {
     }
   };
 }
+
+
+export async function optionalAuth(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) {
+
+  try {
+    if (req.session && req.session.userId) {
+      const { rows } = await query<User>(
+        'SELECT id, email, full_name, role, department, roll_number, division, year, created_at FROM users WHERE id = $1',
+        [req.session.userId]
+      );
+      if (rows.length > 0) {
+        req.user = rows[0];
+      }
+    }
+    next();
+  } catch {
+    next();
+  }
+}
+

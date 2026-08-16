@@ -1,4 +1,17 @@
-import { Category, EventItem, ActivityClaim, ActivitySummary, Certificate, User, Club, ClubEvent, ClubStatus } from '../types';
+import {
+  Category,
+  EventItem,
+  ActivityClaim,
+  ActivitySummary,
+  Certificate,
+  User,
+  Club,
+  ClubEvent,
+  ClubStatus,
+  ClubMembership,
+  EventAttendee,
+} from '../types';
+
 
 const API_BASE = '/api';
 
@@ -134,8 +147,9 @@ export async function apiGetActivities(): Promise<{ activities: ActivityClaim[];
 export async function apiSubmitClaim(claimData: {
   title: string;
   category_id: string;
+  target_type: 'CLUB' | 'TNP';
+  target_club_id?: string | null;
   event_id?: string;
-  points_requested: number;
   proof_details: string;
 }): Promise<void> {
   const res = await fetch(`${API_BASE}/activities/claim`, {
@@ -156,6 +170,83 @@ export async function apiReviewClaim(
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify(reviewData),
+  });
+  await handleResponse(res);
+}
+
+// Club Memberships
+export async function apiGetMyMemberships(): Promise<ClubMembership[]> {
+  const res = await fetch(`${API_BASE}/clubs/memberships/my`, { credentials: 'include' });
+  const data = await handleResponse(res);
+  return data.memberships || [];
+}
+
+export async function apiRequestClubMembership(clubId: string): Promise<ClubMembership> {
+  const res = await fetch(`${API_BASE}/clubs/${clubId}/memberships`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  const data = await handleResponse(res);
+  return data.membership;
+}
+
+export async function apiGetMyClubMemberships(): Promise<{
+  pendingRequests: ClubMembership[];
+  acceptedMembers: ClubMembership[];
+}> {
+  const res = await fetch(`${API_BASE}/clubs/my/memberships`, { credentials: 'include' });
+  return await handleResponse(res);
+}
+
+export async function apiReviewClubMembership(
+  membershipId: string,
+  status: 'ACCEPTED' | 'REJECTED'
+): Promise<ClubMembership> {
+  const res = await fetch(`${API_BASE}/clubs/memberships/${membershipId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ status }),
+  });
+  const data = await handleResponse(res);
+  return data.membership;
+}
+
+// Club Event Registrations & Attendance
+export async function apiRegisterClubEvent(eventId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/club-events/${eventId}/register`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  await handleResponse(res);
+}
+
+export async function apiUnregisterClubEvent(eventId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/club-events/${eventId}/unregister`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  await handleResponse(res);
+}
+
+export async function apiGetEventAttendees(eventId: string): Promise<{
+  event: ClubEvent;
+  attendees: any[];
+  attendance_confirmed: boolean;
+}> {
+  const res = await fetch(`${API_BASE}/club-events/${eventId}/attendees`, { credentials: 'include' });
+  return await handleResponse(res);
+}
+
+export async function apiConfirmEventAttendance(
+  eventId: string,
+  attendance: { student_id: string; present: boolean }[]
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/club-events/${eventId}/confirm-attendance`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ attendance }),
   });
   await handleResponse(res);
 }
@@ -203,3 +294,4 @@ export async function apiGetAdminAudit(): Promise<any> {
   const res = await fetch(`${API_BASE}/admin/audit`, { credentials: 'include' });
   return await handleResponse(res);
 }
+

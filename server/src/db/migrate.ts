@@ -134,7 +134,52 @@ export async function runMigrations() {
     );
   `);
 
-  console.log('✅ Migrations completed. Tables "users", "session", "categories", "events", "student_activities", "certificates", "clubs", and "club_events" are ready.');
+  // Ensure columns exist on existing student_activities table
+  await query(`ALTER TABLE student_activities ADD COLUMN IF NOT EXISTS target_type VARCHAR(50);`);
+  await query(`ALTER TABLE student_activities ADD COLUMN IF NOT EXISTS target_club_id VARCHAR(36) REFERENCES clubs(id) ON DELETE SET NULL;`);
+  await query(`ALTER TABLE student_activities ADD COLUMN IF NOT EXISTS club_event_id VARCHAR(36) REFERENCES club_events(id) ON DELETE SET NULL;`);
+  await query(`ALTER TABLE student_activities ALTER COLUMN points_requested DROP NOT NULL;`);
+
+  // Ensure columns exist on existing club_events table
+  await query(`ALTER TABLE club_events ADD COLUMN IF NOT EXISTS attendance_confirmed BOOLEAN DEFAULT FALSE;`);
+
+  // Create Club Memberships table
+  await query(`
+    CREATE TABLE IF NOT EXISTS club_memberships (
+      id VARCHAR(36) PRIMARY KEY,
+      club_id VARCHAR(36) REFERENCES clubs(id) ON DELETE CASCADE NOT NULL,
+      student_id VARCHAR(36) REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+      status VARCHAR(50) NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'ACCEPTED', 'REJECTED')),
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(club_id, student_id)
+    );
+  `);
+
+  // Create Event Registrations table
+  await query(`
+    CREATE TABLE IF NOT EXISTS event_registrations (
+      id VARCHAR(36) PRIMARY KEY,
+      event_id VARCHAR(36) REFERENCES club_events(id) ON DELETE CASCADE NOT NULL,
+      student_id VARCHAR(36) REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(event_id, student_id)
+    );
+  `);
+
+  // Create Event Attendance table
+  await query(`
+    CREATE TABLE IF NOT EXISTS event_attendance (
+      id VARCHAR(36) PRIMARY KEY,
+      event_id VARCHAR(36) REFERENCES club_events(id) ON DELETE CASCADE NOT NULL,
+      student_id VARCHAR(36) REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+      present BOOLEAN NOT NULL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(event_id, student_id)
+    );
+  `);
+
+  console.log('✅ Migrations completed. Tables "users", "session", "categories", "events", "student_activities", "certificates", "clubs", "club_events", "club_memberships", "event_registrations", and "event_attendance" are ready.');
 }
 
 if (process.argv[1]?.endsWith('migrate.ts') || process.argv[1]?.endsWith('migrate.js')) {
@@ -145,3 +190,4 @@ if (process.argv[1]?.endsWith('migrate.ts') || process.argv[1]?.endsWith('migrat
       process.exit(1);
     });
 }
+

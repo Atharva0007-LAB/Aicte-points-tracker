@@ -7,7 +7,15 @@ export async function seedDatabase() {
   console.log('🌱 Seeding database with initial accounts, AICTE categories, events, and sample points...');
   await runMigrations();
 
+  // Reset dynamic membership, registration, attendance, and dynamic activities for clean state
+  await query(`DELETE FROM event_attendance;`);
+  await query(`DELETE FROM event_registrations;`);
+  await query(`DELETE FROM club_memberships;`);
+  await query(`DELETE FROM student_activities WHERE id NOT IN ('act_001', 'act_002', 'act_003', 'act_004', 'act_005');`);
+  await query(`UPDATE club_events SET attendance_confirmed = FALSE;`);
+
   const saltRounds = 10;
+
 
   // Seed Users
   const defaultUsers = [
@@ -101,6 +109,13 @@ export async function seedDatabase() {
       min_points: 20,
       description: 'Verified corporate internships, industrial visits, and placement training.',
     },
+    {
+      id: 'cat_club_event',
+      name: 'Club Events',
+      max_points: 40,
+      min_points: 10,
+      description: 'Attendance and participation in verified club events.',
+    },
   ];
 
   for (const c of categories) {
@@ -190,6 +205,8 @@ export async function seedDatabase() {
       status: 'APPROVED',
       reviewed_by: 'usr_club_lead_001',
       reviewer_role: 'CLUB',
+      target_type: 'CLUB',
+      target_club_id: 'club_robotics_001',
     },
     {
       id: 'act_002',
@@ -204,6 +221,8 @@ export async function seedDatabase() {
       status: 'APPROVED',
       reviewed_by: 'usr_club_lead_001',
       reviewer_role: 'CLUB',
+      target_type: 'CLUB',
+      target_club_id: 'club_robotics_001',
     },
     {
       id: 'act_003',
@@ -218,6 +237,8 @@ export async function seedDatabase() {
       status: 'APPROVED',
       reviewed_by: 'usr_tnp_head_001',
       reviewer_role: 'TNP',
+      target_type: 'TNP',
+      target_club_id: null,
     },
     {
       id: 'act_004',
@@ -232,6 +253,8 @@ export async function seedDatabase() {
       status: 'APPROVED',
       reviewed_by: 'usr_super_admin_001',
       reviewer_role: 'SUPER_ADMIN',
+      target_type: 'TNP',
+      target_club_id: null,
     },
     {
       id: 'act_005',
@@ -246,19 +269,23 @@ export async function seedDatabase() {
       status: 'PENDING',
       reviewed_by: null,
       reviewer_role: null,
+      target_type: 'CLUB',
+      target_club_id: 'club_robotics_001',
     },
   ];
 
   for (const a of sampleActivities) {
     await query(
       `
-      INSERT INTO student_activities (id, student_id, student_name, event_id, category_id, title, points_requested, points_awarded, proof_details, status, reviewed_by, reviewer_role)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      INSERT INTO student_activities (id, student_id, student_name, event_id, category_id, title, points_requested, points_awarded, proof_details, status, reviewed_by, reviewer_role, target_type, target_club_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
       ON CONFLICT (id) DO UPDATE SET
         points_awarded = EXCLUDED.points_awarded,
-        status = EXCLUDED.status;
+        status = EXCLUDED.status,
+        target_type = EXCLUDED.target_type,
+        target_club_id = EXCLUDED.target_club_id;
     `,
-      [a.id, a.student_id, a.student_name, a.event_id, a.category_id, a.title, a.points_requested, a.points_awarded, a.proof_details, a.status, a.reviewed_by, a.reviewer_role]
+      [a.id, a.student_id, a.student_name, a.event_id, a.category_id, a.title, a.points_requested, a.points_awarded, a.proof_details, a.status, a.reviewed_by, a.reviewer_role, a.target_type, a.target_club_id]
     );
   }
   console.log('🏆 Seeded Sample Student Activity Points (Alex Morgan: 90/100 points accumulated)');

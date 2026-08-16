@@ -61,7 +61,72 @@ export interface ClubEvent {
   venue?: string | null;
   points: number;
   status: ClubEventStatus;
+  attendance_confirmed?: boolean;
+  is_registered?: boolean;
+  is_member?: boolean;
+  registration_count?: number;
   created_at?: string;
+}
+
+export type MembershipStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED';
+
+export interface ClubMembership {
+  id: string;
+  club_id: string;
+  student_id: string;
+  status: MembershipStatus;
+  created_at?: string;
+  updated_at?: string;
+  club_name?: string;
+  student_name?: string;
+  student_email?: string;
+  roll_number?: string | null;
+  department?: string | null;
+  division?: string | null;
+  year?: string | null;
+}
+
+export interface EventRegistration {
+  id: string;
+  event_id: string;
+  student_id: string;
+  created_at?: string;
+}
+
+export interface EventAttendee {
+  student_id: string;
+  student_name: string;
+  email: string;
+  roll_number: string | null;
+  department: string | null;
+  division: string | null;
+  year: string | null;
+  registered_at: string;
+  present?: boolean | null;
+}
+
+export interface ActivityClaim {
+  id: string;
+  student_id: string;
+  student_name: string;
+  event_id?: string | null;
+  event_title?: string | null;
+  club_event_id?: string | null;
+  category_id: string;
+  category_name?: string;
+  max_points?: number;
+  title: string;
+  points_requested: number;
+  points_awarded: number;
+  proof_details: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  target_type?: 'CLUB' | 'TNP' | null;
+  target_club_id?: string | null;
+  target_club_name?: string | null;
+  reviewed_by?: string | null;
+  reviewer_role?: string | null;
+  rejection_reason?: string | null;
+  created_at: string;
 }
 
 declare module 'express-session' {
@@ -70,3 +135,4 @@ declare module 'express-session' {
     userRole?: UserRole;
   }
 }
+

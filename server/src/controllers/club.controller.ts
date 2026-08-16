@@ -141,3 +141,184 @@ export async function updateClubStatus(req: AuthenticatedRequest, res: Response,
     next(err);
   }
 }
+
+// Student: Request membership to an approved club
+export async function requestClubMembership(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  try {
+    if (!req.user) {
+      throw new ApiError(401, 'Not authenticated');
+    }
+
+    const { id } = req.params; // club_id
+    const studentId = req.user.id;
+
+    // Verify club exists and is APPROVED
+    const clubQuery = await query<Club>('SELECT id, name, status FROM clubs WHERE id = $1', [id]);
+    if (clubQuery.rows.length === 0 || clubQuery.rows[0].status !== 'APPROVED') {
+      throw new ApiError(404, 'Approved club not found');
+    }
+
+    // Check existing membership request
+    const existing = await query(
+      'SELECT id, status FROM club_memberships WHERE club_id = $1 AND student_id = $2',
+      [id, studentId]
+    );
+
+    if (existing.rows.length > 0) {
+      const currentStatus = existing.rows[0].status;
+      if (currentStatus === 'PENDING') {
+        throw new ApiError(400, 'A membership request is already pending review for this club');
+      }
+      if (currentStatus === 'ACCEPTED') {
+        throw new ApiError(400, 'You are already an accepted member of this club');
+      }
+
+      // If REJECTED, reset to PENDING
+      const { rows } = await query(
+        `UPDATE club_memberships
+         SET status = 'PENDING', updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1
+         RETURNING *`,
+        [existing.rows[0].id]
+      );
+
+      return res.status(200).json({
+        message: 'Membership request re-submitted successfully',
+        membership: rows[0],
+      });
+    }
+
+    // Insert new membership request
+    const membershipId = `memb_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const { rows } = await query(
+      `INSERT INTO club_memberships (id, club_id, student_id, status)
+       VALUES ($1, $2, $3, 'PENDING')
+       RETURNING *`,
+      [membershipId, id, studentId]
+    );
+
+    res.status(201).json({
+      message: 'Membership request submitted successfully',
+      membership: rows[0],
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Student: Get all their memberships across clubs
+export async function getMyMemberships(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  try {
+    if (!req.user) {
+      throw new ApiError(401, 'Not authenticated');
+    }
+
+    const { rows } = await query(
+      `SELECT cm.id, cm.club_id, cm.student_id, cm.status, cm.created_at, cm.updated_at,
+              c.name as club_name, c.description as club_description
+       FROM club_memberships cm
+       JOIN clubs c ON cm.club_id = c.id
+       WHERE cm.student_id = $1
+       ORDER BY cm.created_at DESC`,
+      [req.user.id]
+    );
+
+    res.status(200).json({ memberships: rows });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Club Lead: Get their club's incoming pending requests and accepted members
+export async function getMyClubMemberships(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  try {
+    if (!req.user) {
+      throw new ApiError(401, 'Not authenticated');
+    }
+
+    const clubQuery = await query<Club>(
+      'SELECT id, name FROM clubs WHERE administrator_user_id = $1',
+      [req.user.id]
+    );
+
+    if (clubQuery.rows.length === 0) {
+      return res.status(200).json({ pendingRequests: [], acceptedMembers: [] });
+    }
+
+    const clubId = clubQuery.rows[0].id;
+    const { rows } = await query(
+      `SELECT cm.id, cm.club_id, cm.student_id, cm.status, cm.created_at, cm.updated_at,
+              u.full_name as student_name, u.email as student_email, u.roll_number, u.department, u.division, u.year
+       FROM club_memberships cm
+       JOIN users u ON cm.student_id = u.id
+       WHERE cm.club_id = $1
+       ORDER BY cm.created_at DESC`,
+      [clubId]
+    );
+
+    const pendingRequests = rows.filter((r) => r.status === 'PENDING');
+    const acceptedMembers = rows.filter((r) => r.status === 'ACCEPTED');
+
+    res.status(200).json({ pendingRequests, acceptedMembers });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Club Lead: Review a membership request (Accept / Reject)
+export async function reviewClubMembership(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  try {
+    if (!req.user) {
+      throw new ApiError(401, 'Not authenticated');
+    }
+
+    const { id } = req.params; // membership id
+    const { status } = req.body;
+
+    if (!status || !['ACCEPTED', 'REJECTED'].includes(status)) {
+      throw new ApiError(400, 'Valid status is required (ACCEPTED or REJECTED)');
+    }
+
+    // Find reviewer's club
+    const clubQuery = await query<Club>(
+      'SELECT id FROM clubs WHERE administrator_user_id = $1',
+      [req.user.id]
+    );
+
+    if (clubQuery.rows.length === 0) {
+      throw new ApiError(403, 'Forbidden - Only club leads can review memberships');
+    }
+
+    const clubId = clubQuery.rows[0].id;
+
+    // Check membership belongs to this club
+    const membQuery = await query(
+      'SELECT id, club_id, status FROM club_memberships WHERE id = $1',
+      [id]
+    );
+
+    if (membQuery.rows.length === 0) {
+      throw new ApiError(404, 'Membership request not found');
+    }
+
+    if (membQuery.rows[0].club_id !== clubId && req.user.role !== UserRole.SUPER_ADMIN) {
+      throw new ApiError(403, 'Forbidden - You can only review memberships for your own club');
+    }
+
+    const { rows } = await query(
+      `UPDATE club_memberships
+       SET status = $1, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2
+       RETURNING *`,
+      [status, id]
+    );
+
+    res.status(200).json({
+      message: `Membership request ${status.toLowerCase()} successfully`,
+      membership: rows[0],
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
