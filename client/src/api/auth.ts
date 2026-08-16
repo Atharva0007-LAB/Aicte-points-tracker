@@ -1,6 +1,6 @@
 import { User, Club } from '../types';
 
-const API_BASE = 'http://localhost:5001/api';
+const API_BASE = '/api';
 
 async function handleResponse(res: Response) {
   const text = await res.text();
