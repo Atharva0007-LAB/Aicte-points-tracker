@@ -7,17 +7,29 @@ export async function seedDatabase() {
   console.log('🌱 Seeding database with initial accounts, AICTE categories, events, and sample points...');
   await runMigrations();
 
-  // Reset dynamic membership, registration, attendance, and dynamic activities for clean state
-  await query(`DELETE FROM event_attendance;`);
-  await query(`DELETE FROM event_registrations;`);
-  await query(`DELETE FROM club_memberships;`);
-  await query(`DELETE FROM student_activities WHERE id NOT IN ('act_001', 'act_002', 'act_003', 'act_004', 'act_005');`);
-  await query(`UPDATE club_events SET attendance_confirmed = FALSE;`);
+  /*
+   * IMPORTANT:
+   * Do NOT delete dynamic/user-created production data here.
+   *
+   * The previous implementation deleted:
+   * - event_attendance
+   * - event_registrations
+   * - club_memberships
+   * - student_activities
+   *
+   * That made production data disappear whenever seedDatabase()
+   * ran on Render.
+   *
+   * Seed operations below are intentionally idempotent using
+   * ON CONFLICT so they can safely run on startup.
+   */
 
   const saltRounds = 10;
 
-
+  // ============================================================
   // Seed Users
+  // ============================================================
+
   const defaultUsers = [
     {
       id: 'usr_super_admin_001',
@@ -65,56 +77,72 @@ export async function seedDatabase() {
         full_name = EXCLUDED.full_name,
         role = EXCLUDED.role,
         department = EXCLUDED.department;
-    `,
-      [u.id, u.email, hash, u.full_name, u.role, u.department]
+      `,
+      [
+        u.id,
+        u.email,
+        hash,
+        u.full_name,
+        u.role,
+        u.department,
+      ]
     );
 
     console.log(`👤 Seeded user: ${u.email} [Role: ${u.role}]`);
   }
 
+  // ============================================================
   // Seed AICTE Categories
+  // ============================================================
+
   const categories = [
     {
       id: 'cat_tech',
       name: 'Technical & Innovation Activities',
       max_points: 40,
       min_points: 10,
-      description: 'Hackathons, coding contests, paper presentations, and technical workshops.',
+      description:
+        'Hackathons, coding contests, paper presentations, and technical workshops.',
     },
     {
       id: 'cat_sports',
       name: 'Sports & Games',
       max_points: 30,
       min_points: 10,
-      description: 'Inter-college tournaments, athletics, yoga, and physical fitness meets.',
+      description:
+        'Inter-college tournaments, athletics, yoga, and physical fitness meets.',
     },
     {
       id: 'cat_community',
       name: 'Community Service & NSS',
       max_points: 30,
       min_points: 10,
-      description: 'Blood donation camps, environmental drives, and social service initiatives.',
+      description:
+        'Blood donation camps, environmental drives, and social service initiatives.',
     },
     {
       id: 'cat_leadership',
       name: 'Leadership & Management',
       max_points: 20,
       min_points: 5,
-      description: 'Club executive roles, fest coordinators, and student council activities.',
+      description:
+        'Club executive roles, fest coordinators, and student council activities.',
     },
     {
       id: 'cat_internship',
       name: 'Industrial Internships & Training',
       max_points: 40,
       min_points: 20,
-      description: 'Verified corporate internships, industrial visits, and placement training.',
+      description:
+        'Verified corporate internships, industrial visits, and placement training.',
     },
     {
       id: 'cat_club_event',
       name: 'Club Events',
       max_points: 40,
       min_points: 10,
-      description: 'Attendance and participation in verified club events.',
+      description:
+        'Attendance and participation in verified club events.',
     },
   ];
 
@@ -128,18 +156,29 @@ export async function seedDatabase() {
         max_points = EXCLUDED.max_points,
         min_points = EXCLUDED.min_points,
         description = EXCLUDED.description;
-    `,
-      [c.id, c.name, c.max_points, c.min_points, c.description]
+      `,
+      [
+        c.id,
+        c.name,
+        c.max_points,
+        c.min_points,
+        c.description,
+      ]
     );
   }
+
   console.log('🏷️ Seeded AICTE Point Categories');
 
+  // ============================================================
   // Seed Events
+  // ============================================================
+
   const sampleEvents = [
     {
       id: 'evt_hackathon_2026',
       title: 'National College Tech Hackathon 2026',
-      description: '24-hour hackathon creating innovative solutions for real-world problems.',
+      description:
+        '24-hour hackathon creating innovative solutions for real-world problems.',
       category_id: 'cat_tech',
       points: 20,
       event_date: '2026-09-15',
@@ -151,7 +190,8 @@ export async function seedDatabase() {
     {
       id: 'evt_robotics_ws',
       title: 'Autonomous Robotics & IoT Workshop',
-      description: 'Hands-on training session building autonomous micro-rover robots.',
+      description:
+        'Hands-on training session building autonomous micro-rover robots.',
       category_id: 'cat_tech',
       points: 15,
       event_date: '2026-08-20',
@@ -163,7 +203,8 @@ export async function seedDatabase() {
     {
       id: 'evt_blood_drive',
       title: 'Annual NSS Campus Blood Donation Drive',
-      description: 'Community health initiative in collaboration with Red Cross Society.',
+      description:
+        'Community health initiative in collaboration with Red Cross Society.',
       category_id: 'cat_community',
       points: 15,
       event_date: '2026-07-10',
@@ -177,20 +218,79 @@ export async function seedDatabase() {
   for (const e of sampleEvents) {
     await query(
       `
-      INSERT INTO events (id, title, description, category_id, points, event_date, location, organizer_id, organizer_name, status)
+      INSERT INTO events (
+        id,
+        title,
+        description,
+        category_id,
+        points,
+        event_date,
+        location,
+        organizer_id,
+        organizer_name,
+        status
+      )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       ON CONFLICT (id) DO UPDATE SET
         title = EXCLUDED.title,
         description = EXCLUDED.description,
         points = EXCLUDED.points,
         status = EXCLUDED.status;
-    `,
-      [e.id, e.title, e.description, e.category_id, e.points, e.event_date, e.location, e.organizer_id, e.organizer_name, e.status]
+      `,
+      [
+        e.id,
+        e.title,
+        e.description,
+        e.category_id,
+        e.points,
+        e.event_date,
+        e.location,
+        e.organizer_id,
+        e.organizer_name,
+        e.status,
+      ]
     );
   }
+
   console.log('📅 Seeded Sample College Events');
 
+  // ============================================================
+  // Seed Approved Robotics Club
+  //
+  // MUST happen before student_activities because
+  // student_activities.target_club_id references clubs.id.
+  // ============================================================
+
+  await query(
+    `
+    INSERT INTO clubs (
+      id,
+      name,
+      description,
+      administrator_user_id,
+      status
+    )
+    VALUES ($1, $2, $3, $4, $5)
+    ON CONFLICT (id) DO UPDATE SET
+      name = EXCLUDED.name,
+      description = EXCLUDED.description,
+      status = EXCLUDED.status;
+    `,
+    [
+      'club_robotics_001',
+      'Robotics & Automation Club',
+      'Official robotics, IoT, and embedded systems engineering club.',
+      'usr_club_lead_001',
+      'APPROVED',
+    ]
+  );
+
+  console.log('🏛️ Seeded Approved Club: Robotics & Automation Club');
+
+  // ============================================================
   // Seed Sample Student Activity Claims for Alex Morgan
+  // ============================================================
+
   const sampleActivities = [
     {
       id: 'act_001',
@@ -198,10 +298,12 @@ export async function seedDatabase() {
       student_name: 'Alex Morgan',
       event_id: 'evt_hackathon_2026',
       category_id: 'cat_tech',
-      title: 'National College Tech Hackathon 2026 - 1st Runner Up',
+      title:
+        'National College Tech Hackathon 2026 - 1st Runner Up',
       points_requested: 20,
       points_awarded: 20,
-      proof_details: 'Certificate of merit issued by Robotics Club & Hackathon Committee.',
+      proof_details:
+        'Certificate of merit issued by Robotics Club & Hackathon Committee.',
       status: 'APPROVED',
       reviewed_by: 'usr_club_lead_001',
       reviewer_role: 'CLUB',
@@ -217,7 +319,8 @@ export async function seedDatabase() {
       title: 'Autonomous Robotics Workshop Participant',
       points_requested: 15,
       points_awarded: 15,
-      proof_details: 'Attendance verified by workshop lead.',
+      proof_details:
+        'Attendance verified by workshop lead.',
       status: 'APPROVED',
       reviewed_by: 'usr_club_lead_001',
       reviewer_role: 'CLUB',
@@ -233,7 +336,8 @@ export async function seedDatabase() {
       title: 'Summer Software Engineering Internship (8 Weeks)',
       points_requested: 40,
       points_awarded: 40,
-      proof_details: 'Offer letter, completion certificate, and TNP appraisal report from TechCorp.',
+      proof_details:
+        'Offer letter, completion certificate, and TNP appraisal report from TechCorp.',
       status: 'APPROVED',
       reviewed_by: 'usr_tnp_head_001',
       reviewer_role: 'TNP',
@@ -249,7 +353,8 @@ export async function seedDatabase() {
       title: 'NSS Blood Donation Camp Volunteer',
       points_requested: 15,
       points_awarded: 15,
-      proof_details: 'Red Cross Donor Card #RC-2026-8819.',
+      proof_details:
+        'Red Cross Donor Card #RC-2026-8819.',
       status: 'APPROVED',
       reviewed_by: 'usr_super_admin_001',
       reviewer_role: 'SUPER_ADMIN',
@@ -265,7 +370,8 @@ export async function seedDatabase() {
       title: 'Inter-College Chess Tournament Participation',
       points_requested: 10,
       points_awarded: 0,
-      proof_details: 'Tournament registration receipt attached.',
+      proof_details:
+        'Tournament registration receipt attached.',
       status: 'PENDING',
       reviewed_by: null,
       reviewer_role: null,
@@ -277,46 +383,66 @@ export async function seedDatabase() {
   for (const a of sampleActivities) {
     await query(
       `
-      INSERT INTO student_activities (id, student_id, student_name, event_id, category_id, title, points_requested, points_awarded, proof_details, status, reviewed_by, reviewer_role, target_type, target_club_id)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      INSERT INTO student_activities (
+        id,
+        student_id,
+        student_name,
+        event_id,
+        category_id,
+        title,
+        points_requested,
+        points_awarded,
+        proof_details,
+        status,
+        reviewed_by,
+        reviewer_role,
+        target_type,
+        target_club_id
+      )
+      VALUES (
+        $1, $2, $3, $4, $5, $6, $7,
+        $8, $9, $10, $11, $12, $13, $14
+      )
       ON CONFLICT (id) DO UPDATE SET
         points_awarded = EXCLUDED.points_awarded,
         status = EXCLUDED.status,
         target_type = EXCLUDED.target_type,
         target_club_id = EXCLUDED.target_club_id;
-    `,
-      [a.id, a.student_id, a.student_name, a.event_id, a.category_id, a.title, a.points_requested, a.points_awarded, a.proof_details, a.status, a.reviewed_by, a.reviewer_role, a.target_type, a.target_club_id]
+      `,
+      [
+        a.id,
+        a.student_id,
+        a.student_name,
+        a.event_id,
+        a.category_id,
+        a.title,
+        a.points_requested,
+        a.points_awarded,
+        a.proof_details,
+        a.status,
+        a.reviewed_by,
+        a.reviewer_role,
+        a.target_type,
+        a.target_club_id,
+      ]
     );
   }
-  console.log('🏆 Seeded Sample Student Activity Points (Alex Morgan: 90/100 points accumulated)');
 
-  // Seed Approved Club for Alex's college
-  await query(
-    `
-    INSERT INTO clubs (id, name, description, administrator_user_id, status)
-    VALUES ($1, $2, $3, $4, $5)
-    ON CONFLICT (id) DO UPDATE SET
-      name = EXCLUDED.name,
-      description = EXCLUDED.description,
-      status = EXCLUDED.status;
-  `,
-    [
-      'club_robotics_001',
-      'Robotics & Automation Club',
-      'Official robotics, IoT, and embedded systems engineering club.',
-      'usr_club_lead_001',
-      'APPROVED',
-    ]
+  console.log(
+    '🏆 Seeded Sample Student Activity Points (Alex Morgan: 90/100 points accumulated)'
   );
-  console.log('🏛️ Seeded Approved Club: Robotics & Automation Club');
 
-  // Seed Sample Club Events (Fixed-point system)
+  // ============================================================
+  // Seed Sample Club Events
+  // ============================================================
+
   const sampleClubEvents = [
     {
       id: 'cevt_001',
       club_id: 'club_robotics_001',
       title: 'Autonomous Rover Challenge 2026',
-      description: 'Design and race obstacle-avoiding autonomous mini-rovers. Hardware components provided on spot.',
+      description:
+        'Design and race obstacle-avoiding autonomous mini-rovers. Hardware components provided on spot.',
       event_date: '2026-09-10',
       start_time: '10:00 AM',
       end_time: '04:00 PM',
@@ -328,7 +454,8 @@ export async function seedDatabase() {
       id: 'cevt_002',
       club_id: 'club_robotics_001',
       title: 'Hands-on Drone Aerodynamics Bootcamp',
-      description: 'Comprehensive quadcopter assembly, calibration, and PID controller tuning workshop.',
+      description:
+        'Comprehensive quadcopter assembly, calibration, and PID controller tuning workshop.',
       event_date: '2026-09-24',
       start_time: '02:00 PM',
       end_time: '06:00 PM',
@@ -341,8 +468,22 @@ export async function seedDatabase() {
   for (const ce of sampleClubEvents) {
     await query(
       `
-      INSERT INTO club_events (id, club_id, title, description, event_date, start_time, end_time, venue, points, status)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      INSERT INTO club_events (
+        id,
+        club_id,
+        title,
+        description,
+        event_date,
+        start_time,
+        end_time,
+        venue,
+        points,
+        status
+      )
+      VALUES (
+        $1, $2, $3, $4, $5,
+        $6, $7, $8, $9, $10
+      )
       ON CONFLICT (id) DO UPDATE SET
         title = EXCLUDED.title,
         description = EXCLUDED.description,
@@ -352,16 +493,31 @@ export async function seedDatabase() {
         venue = EXCLUDED.venue,
         points = EXCLUDED.points,
         status = EXCLUDED.status;
-    `,
-      [ce.id, ce.club_id, ce.title, ce.description, ce.event_date, ce.start_time, ce.end_time, ce.venue, ce.points, ce.status]
+      `,
+      [
+        ce.id,
+        ce.club_id,
+        ce.title,
+        ce.description,
+        ce.event_date,
+        ce.start_time,
+        ce.end_time,
+        ce.venue,
+        ce.points,
+        ce.status,
+      ]
     );
   }
+
   console.log('🎯 Seeded Sample Fixed-Point Club Events');
 
   console.log('✅ Database seeding complete.');
 }
 
-if (process.argv[1]?.endsWith('seed.ts') || process.argv[1]?.endsWith('seed.js')) {
+if (
+  process.argv[1]?.endsWith('seed.ts') ||
+  process.argv[1]?.endsWith('seed.js')
+) {
   seedDatabase()
     .then(() => process.exit(0))
     .catch((err) => {
