@@ -29,7 +29,9 @@ export async function getDb() {
     user: config.pgUser,
     password: config.pgPassword,
     database: config.pgDatabase,
+    ssl: config.nodeEnv === 'production' ? { rejectUnauthorized: false } : false,
   });
+
 
   return { mode: 'pool', db: pgPool };
 }

@@ -1,3 +1,4 @@
+import path from 'path';
 import express from 'express';
 import cors from 'cors';
 import session from 'express-session';
@@ -104,8 +105,22 @@ export function createApp() {
   app.use('/api/clubs', clubRoutes);
   app.use('/api/club-events', clubEventRoutes);
 
+  // Serve static assets and catch-all in production
+  if (config.nodeEnv === 'production') {
+    const clientDistPath = path.resolve(__dirname, '../../client/dist');
+    app.use(express.static(clientDistPath));
+
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api')) {
+        return next();
+      }
+      res.sendFile(path.resolve(clientDistPath, 'index.html'));
+    });
+  }
+
   // Centralized Error Handling
   app.use(errorHandler);
 
   return app;
 }
+
